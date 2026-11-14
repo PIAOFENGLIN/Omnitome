@@ -6,9 +6,7 @@ dist/
 build/
 
 # Environment & secrets
-.env
-.env.local
-.env.*.local
+.env*
 
 # Local database (user data)
 storage/
@@ -96,3 +94,14 @@ resources/sidecar.7z
 
 # Local agent governance
 AGENTS.md
+
+# Commercial builds & release distributions
+commercial/
+
+# Internal dossiers & launch strategy
+docs/career/
+docs/launch/
+
+# Agent configurations & workspace skills
+.agents/
+.claude/

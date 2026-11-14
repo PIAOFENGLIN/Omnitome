@@ -25,6 +25,7 @@
 
 <!-- NEW BADGES: The "Hire Me" Section -->
 <p align="center">
+  <a href="#licensing-pricing--storefront-policy"><img src="https://img.shields.io/badge/💖_Sponsor_Omnitome-Backer_Editions-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor Omnitome" /></a>
   <a href="https://www.linkedin.com/in/ayush-sharma-swe/"><img src="https://img.shields.io/badge/Status-Open_to_Work-brightgreen?style=for-the-badge&logo=linkedin" alt="Hire Me" /></a>
   <a href="mailto:ayush.sharma.sys@gmail.com"><img src="https://img.shields.io/badge/Email-ayush.sharma.sys@gmail.com-red?style=for-the-badge&logo=gmail" alt="Email Me" /></a>
 </p>
@@ -33,8 +34,8 @@
   <a href="https://github.com/ayumu-ml/Omnitome/releases/latest">
     <img src="https://img.shields.io/badge/⚡_Download_Omnitome_v1.1.1-Windows_x64_(1.95_GB)-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Omnitome v1.1.1 for Windows" />
   </a>
-  <a href="https://github.com/ayumu-ml/Omnitome/releases/latest">
-    <img src="https://img.shields.io/badge/Release_Notes-v1.1.1_Latest-2ea44f?style=for-the-badge&logo=github&logoColor=white" alt="Release Notes" />
+  <a href="#licensing-pricing--storefront-policy">
+    <img src="https://img.shields.io/badge/💖_Sponsor_&_Storefront-v1.x_Backer-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor Omnitome" />
   </a>
   <a href="https://youtu.be/Nmb-qiZpnrk">
     <img src="https://img.shields.io/badge/🎬_Watch_Demo-3:44_Master_Walkthrough-E0245E?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch Demo" />
@@ -813,3 +814,20 @@ I am the creator and lead architect of Omnitome. I specialize in bridging the ga
 Omnitome is open-source software licensed under the **GNU Affero General Public License v3.0** ([AGPL-3.0-only](./LICENSE)).
 
 *Historical licensing note:* Versions of this repository tagged before 2026-10-18 were released under the MIT License. The v1.0.0 codebase and all subsequent releases are governed exclusively by AGPL-3.0-only. Commercial and enterprise proprietary embedding inquiries are governed under dual-licensing provisions (see [docs/RIGHTS.md](./docs/RIGHTS.md)).
+
+---
+
+## Licensing, Pricing & Storefront Policy
+
+Omnitome Core (`v1.1.1`) is free to download and run locally with zero network egress.
+
+### Optional Paid Editions & Developer Packs
+- **[Omnitome Pro — `v1.x` Founding Backer License ($19 USD, one-time)](https://checkout.dodopayments.com/buy/pdt_0Nrw7EgD1QPeVLHhiRp8K?quantity=1):** Includes all `v1.x` updates (`v1.2+` power workflows including cross-library synthesis, batch citation exports, and domain-aware parsing). Delivered instantly via license key upon purchase. *(Note: Future `v2.0` multimodal image-generation and live conversational voice-agent editions will be released as a separate major product with an optional loyalty upgrade discount for `v1.x` Pro holders.)*
+- **[OmniCore AI Showcase Video Director Skill Pack ($19 USD, one-time)](https://checkout.dodopayments.com/buy/pdt_0NrwNieIrGcRUyxVN27Cr?quantity=1):** Standalone `SKILL.md` workflow and Python DSP scripts (`mix_and_duck.py`, `generate_srt.py`, `mux_faststart.py`) for Antigravity, Claude Code, Cursor, and Codex CLI. Instant ZIP download.
+- **[OmniCore Developer Skills Suite — Full 12-Skill Pack ($29 USD, one-time)](https://checkout.dodopayments.com/buy/pdt_0NrwO3uM8IHlaPodEifu3?quantity=1):** Complete collection of 12 portable agentic engineering contracts, runnable examples, and `showcase.json` test fixtures. Instant ZIP download.
+
+### Terms, Privacy & Refunds
+- **Support & Contact:** `ayush.sharma.sys@gmail.com`
+- **Privacy:** Omnitome processes documents locally on your device. Checkout, tax invoicing, and license-key delivery are processed securely by our Merchant of Record (Dodo Payments).
+- **Terms of Use:** Paid license keys and digital skill packs grant a non-exclusive, non-transferable individual developer/user license.
+- **Refund Policy:** Because digital archives and license keys are delivered immediately upon purchase, all sales are final once downloaded or activated. If a technical defect prevents activation or download, contact `ayush.sharma.sys@gmail.com` within 7 days for a full refund or replacement.
