@@ -103,16 +103,21 @@ class AttributionArbiter {
         const bResult = await this.callSignalB(paragraph, candidateChunks, C_signal, options);
         if (bResult && Array.isArray(bResult.chunk_ids) && bResult.chunk_ids.length > 0) {
           // Filter to valid chunks only
-          const validBChunks = bResult.chunk_ids.filter((cid) => sourceChunkIdSet.has(cid));
+          const validBChunks = [...new Set(bResult.chunk_ids.filter((cid) => sourceChunkIdSet.has(cid)))];
           if (validBChunks.length > 0) {
-            // Re-normalize weights
+            // Explicit invalid weights must not turn into verified evidence.
+            const suppliedWeights = validBChunks.map((cid) => bResult.weights?.[cid]);
+            if (suppliedWeights.some((w) => w !== undefined &&
+              (typeof w !== 'number' || !Number.isFinite(w) || w < 0))) {
+              return unverified('arbiter_invalid_weights');
+            }
             const normWeights = {};
             let sumWeights = 0;
             for (const cid of validBChunks) {
               const w = typeof bResult.weights?.[cid] === 'number' ? bResult.weights[cid] : 1.0;
               sumWeights += w;
             }
-            if (sumWeights <= 0) sumWeights = 1.0;
+            if (!Number.isFinite(sumWeights) || sumWeights <= 0) return unverified('arbiter_invalid_weights');
             for (const cid of validBChunks) {
               const w = typeof bResult.weights?.[cid] === 'number' ? bResult.weights[cid] : 1.0;
               normWeights[cid] = Number((w / sumWeights).toFixed(4));
@@ -215,15 +220,16 @@ OUTPUT JSON ONLY:
 }`;
 
     for (let attempt = 1; attempt <= 2; attempt++) {
+      let timeoutId;
       try {
         const provider = aiService.getActiveProvider();
         const health = await provider.checkHealth();
         if (!health || !health.available) break;
 
         const timeoutMs = options.timeout || 15000;
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Signal B timeout')), timeoutMs)
-        );
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Signal B timeout')), timeoutMs);
+        });
 
         const response = await Promise.race([
           aiService.generateText(prompt, {
@@ -242,6 +248,8 @@ OUTPUT JSON ONLY:
         }
       } catch (err) {
         if (attempt === 2) throw err;
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 

@@ -711,9 +711,9 @@ export function splitIntoSentences(text?: string | null): string[] {
     );
     const token = (lastSpace >= 0 ? before.slice(lastSpace + 1) : before).toLowerCase();
 
-    if (STRONG_ABBREVIATIONS.has(token + '.')) { i = j - 1; continue; }
+    if (ch === '.' && STRONG_ABBREVIATIONS.has(token + '.')) { i = j - 1; continue; }
 
-    if (/^[a-z]$/.test(token)) {
+    if (ch === '.' && /^[a-z]$/.test(token)) {
       const prev = lastSpace >= 0 ? before.slice(0, lastSpace).trim() : '';
       const prevWord = (prev.split(/\s+/).pop() || '').toLowerCase();
       const isPrevInitial = /^[a-z]\.$/.test(prevWord) && !STRONG_ABBREVIATIONS.has(prevWord);

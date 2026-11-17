@@ -164,7 +164,7 @@ class AttributionRepository {
 
     // Normalize historical fallback rows without rewriting the user's database.
     const unverified = row.method === 'unverified' || (Boolean(row.fell_back) &&
-      ['arbiter_unavailable', 'arbiter_no_valid_sources', 'fast_path_bypass'].includes(row.fallback_reason));
+      ['arbiter_unavailable', 'arbiter_no_valid_sources', 'arbiter_invalid_weights', 'fast_path_bypass'].includes(row.fallback_reason));
 
     return {
       id: row.id,

@@ -75,6 +75,7 @@ for (const stage of ['legacy', 'reranker']) {
     });
     await r.verifyRepresentation('r', { skipJobCreation: true });
     assert.equal(rows[0].grounded, false); assert.equal(rows[0].segments.length, 0);
+    assert.equal(rows[0].weights_json.sentence_splitter_version, 2);
     const api = r.getProvenance('r').paragraphs[0];
     assert.equal(api.method, 'unverified'); assert.equal(api.fell_back, true);
     assert.equal(api.fallback_reason, 'arbiter_unavailable');
@@ -112,6 +113,8 @@ const cases = [
   ['decimals', 'The value is 3.14. Next result.', ['The value is 3.14.', 'Next result.']],
   ['initials', 'J. R. Smith agrees. Next result.', ['J. R. Smith agrees.', 'Next result.']],
   ['math variable', 'Let the variable be x. Next result.', ['Let the variable be x.', 'Next result.']],
+  ['CJK after abbreviation token', 'Use eq。下一句。', ['Use eq。', '下一句。']],
+  ['question after abbreviation token', 'Ask Dr? Yes.', ['Ask Dr?', 'Yes.']],
   ['empty', '', []],
 ];
 for (const [name, input, expected] of cases) {
@@ -120,3 +123,81 @@ for (const [name, input, expected] of cases) {
     assert.deepEqual(plain(frontend.splitIntoSentences(input)), expected);
   });
 }
+
+for (const weight of [-1, 0, NaN, Infinity, 'high']) {
+  test(`arbitration rejects invalid weight ${weight}`, async () => {
+    const a = arbiter();
+    a.callSignalB = async () => ({ chunk_ids: ['a'], weights: { a: weight } });
+    const result = await a.resolveParagraphAttribution(params());
+    assert.equal(result.grounded, false);
+    assert.equal(result.fallback_reason, 'arbiter_invalid_weights');
+  });
+}
+test('duplicate source IDs are deduplicated before weight normalization', async () => {
+  const a = arbiter();
+  a.callSignalB = async () => ({ chunk_ids: ['a', 'a', 'b'], weights: { a: 1, b: 1 } });
+  const result = await a.resolveParagraphAttribution(params());
+  assert.equal(result.grounded, true);
+  assert.deepEqual(plain(result.chunk_ids), ['a', 'b']);
+  assert.deepEqual(plain(result.weights), { a: .5, b: .5 });
+});
+test('real provider parsing accepts empty evidence without retrying', async () => {
+  let calls = 0;
+  const a = load(arbiterPath, { '../ai/aiService': {
+    getActiveProvider: () => ({ checkHealth: async () => ({ available: true }) }),
+    generateText: async () => { calls++; return { text: '{"chunk_ids":[],"weights":{}}' }; },
+  } });
+  const result = await a.resolveParagraphAttribution(params());
+  assert.equal(result.fallback_reason, 'arbiter_no_valid_sources');
+  assert.equal(calls, 1);
+});
+test('malformed provider JSON retries then remains unverified', async () => {
+  let calls = 0;
+  const a = load(arbiterPath, { '../ai/aiService': {
+    getActiveProvider: () => ({ checkHealth: async () => ({ available: true }) }),
+    generateText: async () => { calls++; return { text: 'not JSON' }; },
+  } });
+  const result = await a.resolveParagraphAttribution(params());
+  assert.equal(result.fallback_reason, 'arbiter_unavailable');
+  assert.equal(calls, 2);
+});
+
+for (const text of ['첫 문장입니다. 다음 문장입니다.', '第一句。第二句。', '「本当です。」次です。', '"First sentence." Next sentence.']) {
+  test(`legacy segment indices are hidden when boundaries change: ${text}`, () => {
+    const r = resolver();
+    const row = { paragraph_index: 0, grounded: true, method: 'c_primary', weights: {},
+      segments: [{ sentence_start: 0, sentence_end: 0, chunk_id: 'a' }] };
+    const result = r.protectLegacySegments([row], { content: text })[0];
+    assert.equal(result.grounded, false);
+    assert.equal(result.fallback_reason, 'sentence_boundaries_changed');
+    assert.equal(result.segments.length, 0);
+    assert.equal(row.grounded, true);
+    const fresh = { ...row, weights: { sentence_splitter_version: 2 } };
+    assert.equal(r.protectLegacySegments([fresh], { content: text })[0], fresh);
+  });
+}
+test('unchanged legacy English boundaries keep source links', () => {
+  const r = resolver();
+  const row = { paragraph_index: 0, grounded: true, weights: {}, segments: [{ sentence_start: 0, sentence_end: 1 }] };
+  assert.equal(r.protectLegacySegments([row], { content: 'First sentence. Next sentence.' })[0], row);
+});
+test('API and cached verification both suppress stale source links', async () => {
+  const row = { paragraph_index: 0, grounded: true, method: 'c_primary', weights: {},
+    segments: [{ sentence_start: 0, sentence_end: 0, chunk_id: 'a' }] };
+  const r = resolver({
+    '../../repositories/attributionRepository': { getBySmartChapterId: () => [row] },
+    '../../repositories/smartChapterRepository': { getById: () => ({ content: '첫 문장입니다. 다음 문장입니다.' }) },
+  });
+  const cached = await r.verifyRepresentation('r');
+  const api = r.getProvenance('r');
+  for (const response of [cached, api]) {
+    assert.equal(response.paragraphs[0].grounded, false);
+    assert.equal(response.paragraphs[0].fallback_reason, 'sentence_boundaries_changed');
+    assert.equal(response.paragraphs[0].segments.length, 0);
+  }
+});
+test('missing legacy content fails closed rather than guessing sentence indices', () => {
+  const r = resolver();
+  const row = { paragraph_index: 0, grounded: true, segments: [{ sentence_start: 0, sentence_end: 0 }] };
+  assert.equal(r.protectLegacySegments([row], null)[0].grounded, false);
+});
