@@ -81,6 +81,43 @@ for (const stage of ['legacy', 'reranker']) {
     assert.equal(api.fallback_reason, 'arbiter_unavailable');
   });
 }
+// Test 8's close-margin case: candidate proximity alone is not verification.
+for (const fast of [false, true]) {
+  test(`close-margin multi-chunk attribution with fast=${fast}`, async () => {
+    let rows = [], calls = 0;
+    const a = arbiter();
+    a.callSignalB = async () => {
+      calls += 1;
+      return { chunk_ids: ['a', 'b'], weights: { a: .55, b: .45 } };
+    };
+    const r = resolver({
+      './attributionArbiter': a,
+      './embeddingService': { getDimension: () => 2, embedText: async () => [1, 0],
+        cosineSimilarity: (_query, chunk) => chunk[0] },
+      '../../repositories/smartChapterRepository': { getById: () => ({ id: 'r', book_id: 'book',
+        content: 'Agile principles prioritize iterative delivery. Scrum uses timeboxed cycles.',
+        planned_source_section_ids: ['a', 'b'], metadata: {} }) },
+      '../../repositories/semanticChunkRepository': {
+        getById: id => ({ id, embedding: [id === 'a' ? .85 : .80, 0] }) },
+      '../../repositories/attributionRepository': { getBySmartChapterId: () => rows, createBatch: x => (rows = x) },
+      '../../repositories/jobRepository': { update() {} },
+    });
+    await r.verifyRepresentation('r', { fast, force: true, skipJobCreation: true });
+    assert.equal(calls, fast ? 0 : 1);
+    assert.equal(rows[0].grounded, !fast);
+    if (fast) {
+      assert.equal(rows[0].fallback_reason, 'fast_path_bypass');
+      assert.deepEqual(plain(rows[0].segments), []);
+    } else {
+      assert.equal(rows[0].method, 'b_arbitrated');
+      assert.ok(rows[0].segments.length > 0);
+      for (const segment of rows[0].segments) {
+        assert.equal(segment.chunk_id, 'a');
+        assert.deepEqual(plain(segment.chunk_ids), ['a', 'b']);
+      }
+    }
+  });
+}
 test('historical failed rows normalize on read; successful rows are preserved', () => {
   const repo = load('backend/repositories/attributionRepository.js', { '../db/database': {} });
   const row = { id: 'old', grounded: 1, fell_back: 1, method: 'b_weak_c', confidence: 'low',
