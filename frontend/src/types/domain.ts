@@ -650,6 +650,8 @@ export interface ParagraphAttribution {
   method: string;
   confidence: string;
   grounded: boolean;
+  fell_back?: boolean;
+  fallback_reason?: string | null;
 }
 
 export interface SegmentRun {
@@ -683,20 +685,23 @@ export function splitIntoSentences(text?: string | null): string[] {
   let start = 0;
   for (let i = 0; i < cleaned.length; i++) {
     const ch = cleaned[i];
-    if (ch !== '.' && ch !== '!' && ch !== '?') continue;
+    if (!/[.!?。！？]/u.test(ch)) continue;
+    const isCjkBoundary = /[。！？]/u.test(ch);
 
     let j = i + 1;
-    while (j < cleaned.length && /[.!?]/.test(cleaned[j])) j++;
+    while (j < cleaned.length && /[.!?。！？]/u.test(cleaned[j])) j++;
+    // Keep closing punctuation with its sentence (including Japanese quotes).
+    while (j < cleaned.length && /["'”’」』）)]/u.test(cleaned[j])) j++;
 
     if (j >= cleaned.length) break;
-    if (!/\s/.test(cleaned[j])) { i = j - 1; continue; }
+    if (!isCjkBoundary && !/\s/.test(cleaned[j])) { i = j - 1; continue; }
 
     let k = j;
     while (k < cleaned.length && /\s/.test(cleaned[k])) k++;
     if (k >= cleaned.length) break;
 
     const next = cleaned[k];
-    if (!/[A-Z0-9"'([]/.test(next)) { i = j - 1; continue; }
+    if (!isCjkBoundary && !/[A-Z0-9"'([“‘「『\p{Script=Hangul}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(next)) { i = j - 1; continue; }
 
     const before = cleaned.slice(0, i);
     const lastSpace = Math.max(

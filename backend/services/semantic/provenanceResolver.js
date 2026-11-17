@@ -28,20 +28,23 @@ function splitIntoSentences(text) {
   let start = 0;
   for (let i = 0; i < cleaned.length; i++) {
     const ch = cleaned[i];
-    if (ch !== '.' && ch !== '!' && ch !== '?') continue;
+    if (!/[.!?。！？]/u.test(ch)) continue;
+    const isCjkBoundary = /[。！？]/u.test(ch);
 
     let j = i + 1;
-    while (j < cleaned.length && /[.!?]/.test(cleaned[j])) j++;
+    while (j < cleaned.length && /[.!?。！？]/u.test(cleaned[j])) j++;
+    // Keep closing punctuation with its sentence (including Japanese quotes).
+    while (j < cleaned.length && /["'”’」』）)]/u.test(cleaned[j])) j++;
 
     if (j >= cleaned.length) break;
-    if (!/\s/.test(cleaned[j])) { i = j - 1; continue; }
+    if (!isCjkBoundary && !/\s/.test(cleaned[j])) { i = j - 1; continue; }
 
     let k = j;
     while (k < cleaned.length && /\s/.test(cleaned[k])) k++;
     if (k >= cleaned.length) break;
 
     const next = cleaned[k];
-    if (!/[A-Z0-9"'([]/.test(next)) { i = j - 1; continue; }
+    if (!isCjkBoundary && !/[A-Z0-9"'([“‘「『\p{Script=Hangul}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(next)) { i = j - 1; continue; }
 
     const before = cleaned.slice(0, i);
     const lastSpace = Math.max(
@@ -291,7 +294,7 @@ class ProvenanceResolver {
           (attributionStage === 'reranker' || attributionStage === 'centroid') &&
           Object.keys(rerankerScores).length > 0;
 
-        if (hasRerankerSignal) {
+        if (arbiterResult.grounded && hasRerankerSignal) {
           let anchorId = null;
           let anchorScore = -Infinity;
           for (const [cid, score] of Object.entries(rerankerScores)) {
@@ -317,7 +320,7 @@ class ProvenanceResolver {
             chunk_ids: finalChunkIds,
             confidence: paraConfidence,
           });
-        } else if (sentences.length > 0 && resolvedChunkIds.length > 0) {
+        } else if (arbiterResult.grounded && sentences.length > 0 && resolvedChunkIds.length > 0) {
           if (resolvedChunkIds.length === 1) {
             // Entire paragraph maps to single chunk
             segments.push({
@@ -524,6 +527,8 @@ class ProvenanceResolver {
         method: r.method,
         confidence: r.confidence,
         grounded: r.grounded,
+        fell_back: r.fell_back,
+        fallback_reason: r.fallback_reason,
       })),
     };
   }

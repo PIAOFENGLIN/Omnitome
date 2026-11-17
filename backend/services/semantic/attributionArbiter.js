@@ -84,20 +84,20 @@ class AttributionArbiter {
       weights: cTop3Weights,
     };
 
-    // Helper to fire Signal B
+    // Candidate retrieval is not successful verification. Keep candidate IDs for
+    // diagnostics, but never expose a skipped/failed arbitration as grounded.
+    const unverified = (reason) => ({
+      method: 'unverified',
+      confidence: 'none',
+      grounded: false,
+      chunk_ids: cAnswer.chunk_ids,
+      weights: cAnswer.weights,
+      fell_back: true,
+      fallback_reason: reason,
+    });
+
     const fireSignalB = async (methodName, confidenceLevel) => {
-      if (options.fast) {
-        // Fast test mode skips LLM arbitration and falls back cleanly to C
-        return {
-          method: methodName,
-          confidence: confidenceLevel,
-          grounded: true,
-          chunk_ids: cAnswer.chunk_ids,
-          weights: cAnswer.weights,
-          fell_back: true,
-          fallback_reason: 'fast_path_bypass',
-        };
-      }
+      if (options.fast) return unverified('fast_path_bypass');
 
       try {
         const bResult = await this.callSignalB(paragraph, candidateChunks, C_signal, options);
@@ -129,26 +129,9 @@ class AttributionArbiter {
             };
           }
         }
-        // If B returned no valid chunks, fall back to C
-        return {
-          method: methodName,
-          confidence: confidenceLevel,
-          grounded: true,
-          chunk_ids: cAnswer.chunk_ids,
-          weights: cAnswer.weights,
-          fell_back: true,
-          fallback_reason: 'arbiter_unavailable',
-        };
+        return unverified('arbiter_no_valid_sources');
       } catch (err) {
-        return {
-          method: methodName,
-          confidence: confidenceLevel,
-          grounded: true,
-          chunk_ids: cAnswer.chunk_ids,
-          weights: cAnswer.weights,
-          fell_back: true,
-          fallback_reason: 'arbiter_unavailable',
-        };
+        return unverified('arbiter_unavailable');
       }
     };
 
@@ -217,7 +200,7 @@ class AttributionArbiter {
 
     const prompt = `You are an expert reading provenance arbiter.
 Given a compressed Smart paragraph and candidate source passages from the original book, identify which source chunk(s) substantiate the factual claims in the paragraph.
-Output valid JSON only with chunk_ids and normalized weights (summing to 1.0). Limit to max 2-3 chunk_ids.
+Output valid JSON only with chunk_ids and normalized weights (summing to 1.0). Limit to max 2-3 chunk_ids. If none substantiate the claims, return {"chunk_ids": [], "weights": {}}.
 
 SMART PARAGRAPH:
 ${paragraph}
@@ -254,7 +237,7 @@ OUTPUT JSON ONLY:
         const raw = (response && response.text) || '';
         const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
         const parsed = JSON.parse(cleaned);
-        if (parsed && Array.isArray(parsed.chunk_ids) && parsed.chunk_ids.length > 0) {
+        if (parsed && Array.isArray(parsed.chunk_ids)) {
           return parsed;
         }
       } catch (err) {

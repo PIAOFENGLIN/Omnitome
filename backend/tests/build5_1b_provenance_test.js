@@ -106,10 +106,11 @@ async function runTests() {
       options: { fast: true },
     });
 
-    assert.strictEqual(res.method, 'b_arbitrated');
-    assert.strictEqual(res.confidence, 'medium');
-    assert.strictEqual(res.grounded, true);
-    console.log('  ✓ Test 3: Medium C with conflicting Signal A triggers Signal B arbitration.');
+    assert.strictEqual(res.method, 'unverified');
+    assert.strictEqual(res.confidence, 'none');
+    assert.strictEqual(res.grounded, false);
+    assert.strictEqual(res.fallback_reason, 'fast_path_bypass');
+    console.log('  ✓ Test 3: Medium C with conflicting Signal A remains unverified when arbitration is skipped.');
   }
 
   // --------------------------------------------------------------------------
@@ -131,10 +132,11 @@ async function runTests() {
       options: { fast: true },
     });
 
-    assert.strictEqual(res.method, 'b_weak_c');
-    assert.strictEqual(res.confidence, 'low');
-    assert.strictEqual(res.grounded, true);
-    console.log('  ✓ Test 4: Low C similarity triggers b_weak_c with low confidence.');
+    assert.strictEqual(res.method, 'unverified');
+    assert.strictEqual(res.confidence, 'none');
+    assert.strictEqual(res.grounded, false);
+    assert.strictEqual(res.fallback_reason, 'fast_path_bypass');
+    console.log('  ✓ Test 4: Low C similarity remains unverified when arbitration is skipped.');
   }
 
   // --------------------------------------------------------------------------

@@ -1,0 +1,122 @@
+/** Focused regressions; no model, network, or user database is accessed. */
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const root = path.resolve(__dirname, '../..');
+function load(file, deps = {}, source) {
+  const module = { exports: {} };
+  vm.runInNewContext(source || fs.readFileSync(path.join(root, file), 'utf8'), {
+    module, exports: module.exports,
+    require: name => { if (!(name in deps)) throw Error(`Unexpected dependency: ${name}`); return deps[name]; },
+    console: { log() {}, warn() {} }, setTimeout, clearTimeout,
+  }, { filename: file });
+  return module.exports;
+}
+const plain = value => JSON.parse(JSON.stringify(value));
+const arbiterPath = 'backend/services/semantic/attributionArbiter.js';
+function arbiter() { return load(arbiterPath, { '../ai/aiService': {} }); }
+function params(score = .35) {
+  return { paragraph: 'A claim requiring verification.', source_chunks: [{ id: 'a' }, { id: 'b' }],
+    C_signal: { top1: score, top2: score - .01, margin: .01, top1ChunkId: 'a', weights: { a: .51, b: .49 } } };
+}
+for (const score of [.35, .55]) {
+  for (const [name, outcome, reason] of [
+    ['unavailable', () => { throw Error('offline'); }, 'arbiter_unavailable'],
+    ['empty evidence', () => ({ chunk_ids: [], weights: {} }), 'arbiter_no_valid_sources'],
+    ['invalid evidence', () => ({ chunk_ids: ['unknown'], weights: {} }), 'arbiter_no_valid_sources'],
+  ]) {
+    test(`arbitration ${name}, score ${score}: candidate IDs never become verified evidence`, async () => {
+      const a = arbiter(); a.callSignalB = async () => outcome();
+      const result = await a.resolveParagraphAttribution(params(score));
+      assert.equal(result.grounded, false); assert.equal(result.method, 'unverified');
+      assert.equal(result.confidence, 'none'); assert.equal(result.fallback_reason, reason);
+      assert.deepEqual(plain(result.chunk_ids), ['a', 'b']);
+    });
+  }
+}
+test('fast bypass stays unverified; valid arbitration stays grounded', async () => {
+  const a = arbiter(); a.callSignalB = async () => ({ chunk_ids: ['b'], weights: { b: 1 } });
+  const skipped = await a.resolveParagraphAttribution({ ...params(), options: { fast: true } });
+  assert.equal(skipped.grounded, false); assert.equal(skipped.fallback_reason, 'fast_path_bypass');
+  const verified = await a.resolveParagraphAttribution(params());
+  assert.equal(verified.grounded, true); assert.equal(verified.method, 'b_weak_c');
+  assert.equal(verified.fell_back, false); assert.deepEqual(plain(verified.chunk_ids), ['b']);
+});
+test('existing strong, corroborated, and no-evidence decisions remain intact', async () => {
+  const a = arbiter();
+  const strong = params(.9); strong.C_signal.margin = .2;
+  assert.equal((await a.resolveParagraphAttribution(strong)).method, 'c_primary');
+  assert.equal((await a.resolveParagraphAttribution({ ...params(.55), A_claim: { weights: { a: 1 } } })).method, 'c_verified_by_a');
+  assert.equal((await a.resolveParagraphAttribution(params(.1))).method, 'ungrounded');
+});
+function resolver(deps = {}) {
+  const defaults = Object.fromEntries([
+    './embeddingService', './attributionArbiter', '../../repositories/chapterRepository',
+    '../../repositories/smartChapterRepository', '../../repositories/semanticChunkRepository',
+    '../../repositories/outlineRepository', '../../repositories/jobRepository', '../../repositories/attributionRepository',
+  ].map(k => [k, {}]));
+  return load('backend/services/semantic/provenanceResolver.js', { ...defaults, ...deps });
+}
+for (const stage of ['legacy', 'reranker']) {
+  test(`${stage}: unverified result persists without clickable segments and survives API formatting`, async () => {
+    let rows = [];
+    const a = arbiter(); a.callSignalB = async () => { throw Error('offline'); };
+    const r = resolver({
+      './attributionArbiter': a,
+      './embeddingService': { getDimension: () => 2, embedText: async () => [1, 0], cosineSimilarity: () => .35 },
+      '../../repositories/smartChapterRepository': { getById: () => ({ id: 'r', book_id: 'book',
+        content: 'First claim. Second claim.', planned_source_section_ids: ['a', 'b'],
+        metadata: { claimed_attributions: [{ paragraph_index: 0, weights_json: { attribution_stage: stage }, reranker_scores: { a: .9, b: .88 } }] } }) },
+      '../../repositories/semanticChunkRepository': { getById: id => ({ id, embedding: [1, 0] }) },
+      '../../repositories/attributionRepository': { getBySmartChapterId: () => rows, createBatch: x => (rows = x) },
+      '../../repositories/jobRepository': { update() {} },
+    });
+    await r.verifyRepresentation('r', { skipJobCreation: true });
+    assert.equal(rows[0].grounded, false); assert.equal(rows[0].segments.length, 0);
+    const api = r.getProvenance('r').paragraphs[0];
+    assert.equal(api.method, 'unverified'); assert.equal(api.fell_back, true);
+    assert.equal(api.fallback_reason, 'arbiter_unavailable');
+  });
+}
+test('historical failed rows normalize on read; successful rows are preserved', () => {
+  const repo = load('backend/repositories/attributionRepository.js', { '../db/database': {} });
+  const row = { id: 'old', grounded: 1, fell_back: 1, method: 'b_weak_c', confidence: 'low',
+    fallback_reason: 'arbiter_unavailable', segments_json: '[{"sentence_start":0,"sentence_end":1,"chunk_id":"a"}]',
+    source_chunk_ids: '["a"]', weights_json: '{"a":1}' };
+  const normalized = repo.formatRow(row);
+  assert.equal(normalized.grounded, false); assert.equal(normalized.method, 'unverified');
+  assert.deepEqual(plain(normalized.segments), []); assert.deepEqual(plain(normalized.source_chunk_ids), ['a']);
+  assert.equal(row.grounded, 1, 'read normalization does not mutate stored data');
+  const valid = repo.formatRow({ ...row, fell_back: 0, fallback_reason: null });
+  assert.equal(valid.grounded, true); assert.equal(valid.segments.length, 1);
+});
+// Compile the actual frontend function, rather than testing a hand-copied implementation.
+const ts = require('../../frontend/node_modules/typescript');
+const frontend = load('frontend/src/types/domain.ts', {}, ts.transpileModule(
+  fs.readFileSync(path.join(root, 'frontend/src/types/domain.ts'), 'utf8'),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+).outputText);
+const backend = resolver();
+const cases = [
+  ['English', 'First sentence. Second sentence.', ['First sentence.', 'Second sentence.']],
+  ['Korean', '첫 번째 문장입니다. 두 번째 문장입니다.', ['첫 번째 문장입니다.', '두 번째 문장입니다.']],
+  ['Chinese', '第一句话。第二句话。', ['第一句话。', '第二句话。']],
+  ['Japanese', '最初の文です。次の文です。', ['最初の文です。', '次の文です。']],
+  ['fullwidth punctuation', '本当！？はい。', ['本当！？', 'はい。']],
+  ['closing quotes', '「本当です。」次の文です。', ['「本当です。」', '次の文です。']],
+  ['mixed language', 'First sentence. 다음 문장입니다. 最後です。', ['First sentence.', '다음 문장입니다.', '最後です。']],
+  ['citations', '첫 문장입니다. [Source 1] 다음 문장입니다. [Source 2]', ['첫 문장입니다.', '다음 문장입니다.']],
+  ['abbreviations', 'Dr. Smith uses Eq. 2. Results follow.', ['Dr. Smith uses Eq. 2.', 'Results follow.']],
+  ['decimals', 'The value is 3.14. Next result.', ['The value is 3.14.', 'Next result.']],
+  ['initials', 'J. R. Smith agrees. Next result.', ['J. R. Smith agrees.', 'Next result.']],
+  ['math variable', 'Let the variable be x. Next result.', ['Let the variable be x.', 'Next result.']],
+  ['empty', '', []],
+];
+for (const [name, input, expected] of cases) {
+  test(`sentence boundaries match in backend and frontend: ${name}`, () => {
+    assert.deepEqual(plain(backend.splitIntoSentences(input)), expected);
+    assert.deepEqual(plain(frontend.splitIntoSentences(input)), expected);
+  });
+}
